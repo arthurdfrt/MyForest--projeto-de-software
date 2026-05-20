@@ -1,9 +1,10 @@
+# app.py
 import os
 import sqlite3
 import random
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from werkzeug.utils import secure_filename
+from factory import ItemFactory
 
 app = Flask(__name__)
 app.secret_key = 'chave_secreta_projeto_estudos'
@@ -17,7 +18,6 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# --- 1. CLASSES E HERANÇA BÁSICA (FLASK-LOGIN) ---
 class User(UserMixin):
     def __init__(self, id, username):
         self.id = id
@@ -41,75 +41,6 @@ def init_db():
     conn.close()
 
 init_db()
-
-
-# =====================================================================
-# 2. APLICAÇÃO DE OOP: CLASSES, HERANÇA E POLIMORFISMO (O CORAÇÃO DO PROJETO)
-# =====================================================================
-
-class ItemRepositorio:
-    """Classe Base (Superclasse)"""
-    def __init__(self, titulo, usuario_id):
-        self.titulo = titulo
-        self.usuario_id = usuario_id
-        self.tipo = "indefinido"
-
-    def preparar_dados(self):
-        """Método que será sobrescrito (Polimorfismo)"""
-        pass
-
-    def salvar(self):
-        """Método comum herdado por todos os filhos"""
-        # Aqui o Polimorfismo age: ele chama o preparar_dados() específico de cada classe filha
-        dados = self.preparar_dados() 
-        
-        conn = sqlite3.connect('database.db')
-        conn.cursor().execute(
-            "INSERT INTO repositorio (tipo, titulo, conteudo, resposta, usuario_id) VALUES (?, ?, ?, ?, ?)", 
-            dados
-        )
-        conn.commit()
-        conn.close()
-
-class Resumo(ItemRepositorio):
-    """Herança: Resumo é um ItemRepositorio"""
-    def __init__(self, titulo, usuario_id, conteudo):
-        super().__init__(titulo, usuario_id) # Chama o construtor da classe pai
-        self.tipo = "resumo"
-        self.conteudo = conteudo
-
-    def preparar_dados(self):
-        """Polimorfismo: Resumo salva seu texto na coluna conteúdo"""
-        return (self.tipo, self.titulo, self.conteudo, "", self.usuario_id)
-
-class Questao(ItemRepositorio):
-    """Herança: Questao é um ItemRepositorio"""
-    def __init__(self, titulo, usuario_id, pergunta, resposta):
-        super().__init__(titulo, usuario_id)
-        self.tipo = "questao"
-        self.pergunta = pergunta
-        self.resposta = resposta
-
-    def preparar_dados(self):
-        """Polimorfismo: Questão salva pergunta E resposta"""
-        return (self.tipo, self.titulo, self.pergunta, self.resposta, self.usuario_id)
-
-class ArquivoDigital(ItemRepositorio):
-    """Herança: ArquivoDigital lida tanto com PDFs quanto com Músicas"""
-    def __init__(self, titulo, usuario_id, arquivo_obj, tipo_arquivo):
-        super().__init__(titulo, usuario_id)
-        self.tipo = tipo_arquivo
-        self.arquivo_obj = arquivo_obj
-
-    def preparar_dados(self):
-        """Polimorfismo: Lida com o salvamento físico no HD antes de ir pro Banco"""
-        nome_arquivo = ""
-        if self.arquivo_obj and self.arquivo_obj.filename:
-            nome_arquivo = secure_filename(self.arquivo_obj.filename)
-            self.arquivo_obj.save(os.path.join(app.config['UPLOAD_FOLDER'], nome_arquivo))
-        return (self.tipo, self.titulo, nome_arquivo, "", self.usuario_id)
-
-# =====================================================================
 
 
 @app.route('/uploads/<filename>')
@@ -159,12 +90,10 @@ def timer():
     if request.method == 'POST':
         duracao = int(request.form.get('duracao', 0))
         planta = random.choice(["Carvalho", "Cerejeira", "Cacto"])
-        
         conn = sqlite3.connect('database.db')
         cursor = conn.cursor()
         max_pos = cursor.execute("SELECT MAX(posicao) FROM jardim WHERE usuario_id = ?", (current_user.id,)).fetchone()[0]
         nova_posicao = (max_pos or 0) + 1
-        
         cursor.execute("INSERT INTO jardim (tipo_planta, usuario_id, posicao) VALUES (?, ?, ?)", (planta, current_user.id, nova_posicao))
         cursor.execute("UPDATE usuarios SET total_segundos = total_segundos + ? WHERE id = ?", (duracao, current_user.id))
         conn.commit()
@@ -195,7 +124,6 @@ def metas():
             conn.close()
             return redirect(url_for('jardim'))
         conn.commit()
-
     user_data = cursor.execute("SELECT meta_minutos, total_segundos FROM usuarios WHERE id = ?", (current_user.id,)).fetchone()
     conn.close()
     meta, total_minutos = user_data[0], user_data[1] // 60
@@ -230,33 +158,14 @@ def ver_repositorio(tipo):
     conn.close()
     return render_template('repositorio.html', tipo=tipo, itens=itens)
 
-
-# --- 3. USO PRÁTICO DO POLIMORFISMO NA ROTA ---
 @app.route('/adicionar/<tipo>', methods=['POST'])
 @login_required
 def adicionar(tipo):
-    titulo = request.form.get('titulo')
-    novo_item = None
-    
-    # Criamos o objeto específico dependendo do tipo
-    if tipo == 'resumo':
-        conteudo = request.form.get('conteudo')
-        novo_item = Resumo(titulo, current_user.id, conteudo)
-        
-    elif tipo == 'questao':
-        pergunta = request.form.get('conteudo')
-        resposta = request.form.get('resposta')
-        novo_item = Questao(titulo, current_user.id, pergunta, resposta)
-        
-    elif tipo in ['pdf', 'musica']:
-        arquivo = request.files.get('arquivo')
-        novo_item = ArquivoDigital(titulo, current_user.id, arquivo, tipo)
-
-    # POLIMORFISMO EM AÇÃO: Não importa qual é a classe filha instanciada acima,
-    # todas elas têm o método .salvar() e sabem exatamente como executá-lo!
-    if novo_item:
+    try:
+        novo_item = ItemFactory.criar(tipo, request.form, current_user.id, request.files)
         novo_item.salvar()
-
+    except ValueError as e:
+        flash(str(e))
     return redirect(url_for('ver_repositorio', tipo=tipo))
 
 if __name__ == '__main__':
