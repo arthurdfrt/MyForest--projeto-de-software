@@ -15,7 +15,14 @@ class ItemRepositorio(ABC):
     def preparar_dados(self):
         pass
 
+    def antes_de_salvar(self):
+        pass
+
+    def depois_de_salvar(self):
+        pass
+
     def salvar(self):
+        self.antes_de_salvar()
         dados = self.preparar_dados()
         conn = sqlite3.connect('database.db')
         conn.cursor().execute(
@@ -24,7 +31,7 @@ class ItemRepositorio(ABC):
         )
         conn.commit()
         conn.close()
-
+        self.depois_de_salvar()
 
 class Resumo(ItemRepositorio):
     def __init__(self, titulo, usuario_id, conteudo):
@@ -52,6 +59,10 @@ class ArquivoDigital(ItemRepositorio):
         super().__init__(titulo, usuario_id)
         self.tipo = tipo_arquivo
         self.arquivo_obj = arquivo_obj
+
+    def antes_de_salvar(self):
+        if not self.arquivo_obj or not self.arquivo_obj.filename:
+            raise ValueError("Nenhum arquivo enviado")
 
     def preparar_dados(self):
         nome_arquivo = ""

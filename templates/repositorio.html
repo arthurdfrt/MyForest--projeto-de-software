@@ -2,6 +2,12 @@
 {% block content %}
     <h2 style="text-transform: capitalize;">{{ tipo if tipo != 'questao' else 'Questões' }}</h2>
 
+    {% for message in get_flashed_messages() %}
+        <div style="background: #FDECEA; color: #8B0000; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #F5C6CB;">
+            ⚠️ {{ message }}
+        </div>
+    {% endfor %}
+    
     <div style="background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 30px; text-align: left; border: 1px solid #eee;">
         <h3 style="margin-top: 0;">Adicionar Novo(a) {{ tipo|capitalize }}</h3>
         <form action="/adicionar/{{ tipo }}" method="POST" enctype="multipart/form-data">

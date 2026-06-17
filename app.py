@@ -5,6 +5,8 @@ import random
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from factory import ItemFactory
+from strategies import EstrategiaPorTempo
+from database import db
 
 app = Flask(__name__)
 app.secret_key = 'chave_secreta_projeto_estudos'
@@ -25,9 +27,10 @@ class User(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    conn = sqlite3.connect('database.db')
-    data = conn.cursor().execute("SELECT id, username FROM usuarios WHERE id = ?", (user_id,)).fetchone()
-    conn.close()
+    data = db.buscar_um(
+        "SELECT id, username FROM usuarios WHERE id = ?",
+        (user_id,)
+    )
     if data: return User(id=data[0], username=data[1])
     return None
 
@@ -53,10 +56,10 @@ def registro():
     if request.method == 'POST':
         user, pwd = request.form.get('username'), request.form.get('password')
         try:
-            conn = sqlite3.connect('database.db')
-            conn.cursor().execute("INSERT INTO usuarios (username, password) VALUES (?, ?)", (user, pwd))
-            conn.commit()
-            conn.close()
+            db.executar(
+                "INSERT INTO usuarios (username, password) VALUES (?, ?)",
+                (user, pwd)
+            )
             flash('Conta criada! Faça login.')
             return redirect(url_for('login'))
         except: flash('Usuário já existe.')
@@ -66,9 +69,10 @@ def registro():
 def login():
     if request.method == 'POST':
         user, pwd = request.form.get('username'), request.form.get('password')
-        conn = sqlite3.connect('database.db')
-        data = conn.cursor().execute("SELECT id, username, password FROM usuarios WHERE username = ?", (user,)).fetchone()
-        conn.close()
+        data = db.buscar_um(
+            "SELECT id, username, password FROM usuarios WHERE username = ?",
+            (user,)
+        )
         if data and data[2] == pwd:
             login_user(User(data[0], data[1]))
             return redirect(url_for('index'))
@@ -83,21 +87,28 @@ def logout():
 @app.route('/')
 @login_required
 def index(): return render_template('index.html')
-
 @app.route('/timer', methods=['GET', 'POST'])
 @login_required
 def timer():
     if request.method == 'POST':
         duracao = int(request.form.get('duracao', 0))
-        planta = random.choice(["Carvalho", "Cerejeira", "Cacto"])
-        conn = sqlite3.connect('database.db')
-        cursor = conn.cursor()
-        max_pos = cursor.execute("SELECT MAX(posicao) FROM jardim WHERE usuario_id = ?", (current_user.id,)).fetchone()[0]
+        estrategia = EstrategiaPorTempo()
+        planta = estrategia.escolher(duracao)
+
+        max_pos = db.buscar_um(
+            "SELECT MAX(posicao) FROM jardim WHERE usuario_id = ?",
+            (current_user.id,)
+        )[0]
         nova_posicao = (max_pos or 0) + 1
-        cursor.execute("INSERT INTO jardim (tipo_planta, usuario_id, posicao) VALUES (?, ?, ?)", (planta, current_user.id, nova_posicao))
-        cursor.execute("UPDATE usuarios SET total_segundos = total_segundos + ? WHERE id = ?", (duracao, current_user.id))
-        conn.commit()
-        conn.close()
+
+        db.executar(
+            "INSERT INTO jardim (tipo_planta, usuario_id, posicao) VALUES (?, ?, ?)",
+            (planta, current_user.id, nova_posicao)
+        )
+        db.executar(
+            "UPDATE usuarios SET total_segundos = total_segundos + ? WHERE id = ?",
+            (duracao, current_user.id)
+        )
         flash(f"Sessão finalizada! {duracao // 60} minutos contabilizados.")
         return redirect(url_for('jardim'))
     return render_template('timer.html')
@@ -105,57 +116,66 @@ def timer():
 @app.route('/metas', methods=['GET', 'POST'])
 @login_required
 def metas():
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
     if request.method == 'POST':
         nova_meta = request.form.get('nova_meta')
         if nova_meta:
-            cursor.execute("UPDATE usuarios SET meta_minutos = ? WHERE id = ?", (nova_meta, current_user.id))
+            db.executar(
+                "UPDATE usuarios SET meta_minutos = ? WHERE id = ?",
+                (nova_meta, current_user.id)
+            )
             flash(f"Meta de {nova_meta} minutos definida!")
         if 'resgatar' in request.form:
             plantas = ["Carvalho", "Cerejeira", "Cacto"]
-            max_pos = cursor.execute("SELECT MAX(posicao) FROM jardim WHERE usuario_id = ?", (current_user.id,)).fetchone()[0]
+            max_pos = db.buscar_um(
+                "SELECT MAX(posicao) FROM jardim WHERE usuario_id = ?",
+                (current_user.id,)
+            )[0]
             nova_posicao = (max_pos or 0) + 1
             for i in range(5):
-                cursor.execute("INSERT INTO jardim (tipo_planta, usuario_id, posicao) VALUES (?, ?, ?)", (random.choice(plantas), current_user.id, nova_posicao + i))
-            cursor.execute("UPDATE usuarios SET meta_minutos = 0 WHERE id = ?", (current_user.id,))
+                db.executar(
+                    "INSERT INTO jardim (tipo_planta, usuario_id, posicao) VALUES (?, ?, ?)",
+                    (random.choice(plantas), current_user.id, nova_posicao + i)
+                )
+            db.executar(
+                "UPDATE usuarios SET meta_minutos = 0 WHERE id = ?",
+                (current_user.id,)
+            )
             flash("Parabéns! 5 árvores bônus foram adicionadas ao seu jardim!")
-            conn.commit()
-            conn.close()
             return redirect(url_for('jardim'))
-        conn.commit()
-    user_data = cursor.execute("SELECT meta_minutos, total_segundos FROM usuarios WHERE id = ?", (current_user.id,)).fetchone()
-    conn.close()
+
+    user_data = db.buscar_um(
+        "SELECT meta_minutos, total_segundos FROM usuarios WHERE id = ?",
+        (current_user.id,)
+    )
     meta, total_minutos = user_data[0], user_data[1] // 60
     pode_resgatar = meta > 0 and total_minutos >= meta
     return render_template('metas.html', meta=meta, total_minutos=total_minutos, pode_resgatar=pode_resgatar)
-
 @app.route('/jardim')
 @login_required
 def jardim():
-    conn = sqlite3.connect('database.db')
-    plantas = conn.cursor().execute("SELECT id, tipo_planta FROM jardim WHERE usuario_id = ? ORDER BY posicao ASC", (current_user.id,)).fetchall()
-    conn.close()
+    plantas = db.buscar(
+        "SELECT id, tipo_planta FROM jardim WHERE usuario_id = ? ORDER BY posicao ASC",
+        (current_user.id,)
+    )
     return render_template('jardim.html', plantas=plantas)
 
 @app.route('/reordenar', methods=['POST'])
 @login_required
 def reordenar():
     ordem_ids = request.get_json()
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
     for index, planta_id in enumerate(ordem_ids):
-        cursor.execute("UPDATE jardim SET posicao = ? WHERE id = ? AND usuario_id = ?", (index, planta_id, current_user.id))
-    conn.commit()
-    conn.close()
+        db.executar(
+            "UPDATE jardim SET posicao = ? WHERE id = ? AND usuario_id = ?",
+            (index, planta_id, current_user.id)
+        )
     return jsonify({"status": "sucesso"})
-
 @app.route('/repositorio/<tipo>')
 @login_required
 def ver_repositorio(tipo):
-    conn = sqlite3.connect('database.db')
-    itens = conn.cursor().execute("SELECT id, titulo, conteudo, resposta FROM repositorio WHERE tipo=? AND usuario_id=?", (tipo, current_user.id)).fetchall()
-    conn.close()
+    itens = db.buscar(
+        "SELECT id, titulo, conteudo, resposta FROM repositorio WHERE tipo=? AND usuario_id=?",
+        (tipo, current_user.id)
+    )
     return render_template('repositorio.html', tipo=tipo, itens=itens)
 
 @app.route('/adicionar/<tipo>', methods=['POST'])
