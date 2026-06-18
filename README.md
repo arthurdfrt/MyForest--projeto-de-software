@@ -4,43 +4,17 @@ Aplicação web de produtividade desenvolvida com Flask, com foco em demonstrar 
 
 ---
 
-## 🧠 Padrão de Projeto Aplicado — Factory Method
+## 🧠 Padrões de Projeto Aplicados
 
-### O problema
-A rota `/adicionar/<tipo>` concentrava a responsabilidade de decidir qual classe instanciar (`Resumo`, `Questao` ou `ArquivoDigital`), violando o princípio da **Responsabilidade Única (SRP)**. Qualquer novo tipo exigiria modificar diretamente a rota.
+O projeto aplica três padrões de projeto, cada um documentado em detalhes na pasta `design-patterns/`:
 
-### A solução
-Foi criada a classe `ItemFactory`, que centraliza toda a lógica de criação de objetos. A rota passou de um bloco `if/elif` extenso para apenas 3 linhas:
+| Padrão | Categoria | Onde é aplicado | Documentação |
+|---|---|---|---|
+| **Factory Method** | Criacional | Criação de itens no repositório (`Resumo`, `Questao`, `ArquivoDigital`) | [factory.md](https://github.com/arthurdfrt/MyForest--projeto-de-software/blob/main/design-patterns/factory.md) |
+| **Template Method** | Comportamental | Fluxo de salvamento de itens com hooks opcionais | [template.md](https://github.com/arthurdfrt/MyForest--projeto-de-software/blob/main/design-patterns/template.md) |
+| **Proxy** | Estrutural | Acesso centralizado ao banco de dados com logging | [proxy.md](https://github.com/arthurdfrt/MyForest--projeto-de-software/blob/main/design-patterns/proxy.md) |
 
-```python
-# Antes
-if tipo == 'resumo':
-    novo_item = Resumo(titulo, current_user.id, conteudo)
-elif tipo == 'questao':
-    novo_item = Questao(titulo, current_user.id, pergunta, resposta)
-elif tipo in ['pdf', 'musica']:
-    novo_item = ArquivoDigital(titulo, current_user.id, arquivo, tipo)
-
-# Depois
-novo_item = ItemFactory.criar(tipo, request.form, current_user.id, request.files)
-novo_item.salvar()
-```
-
-### Como funciona
-
-| Camada | Responsabilidade |
-|---|---|
-| `ItemFactory.criar()` | Decide **qual** objeto instanciar com base no tipo |
-| Polimorfismo + `salvar()` | Garante que qualquer objeto criado se comporte da mesma forma |
-| Rota `/adicionar/<tipo>` | Apenas lida com HTTP — sem conhecer nenhuma classe concreta |
-
-### Como estender
-Para adicionar um novo tipo (ex: `Video`), basta:
-1. Criar a classe `Video` herdando de `ItemRepositorio`
-2. Implementar `preparar_dados()` na nova classe
-3. Adicionar um `elif` na `ItemFactory`
-
-A rota e o método `salvar()` **não precisam de nenhuma modificação**.
+Cada arquivo explica o problema que motivou a aplicação do padrão, o que mudou no código (com exemplos antes/depois) e como estender a solução no futuro.
 
 ---
 
@@ -48,7 +22,7 @@ A rota e o método `salvar()` **não precisam de nenhuma modificação**.
 
 - **Herança** — `Resumo`, `Questao` e `ArquivoDigital` herdam de `ItemRepositorio`
 - **Polimorfismo** — todas as subclasses implementam `preparar_dados()` de forma diferente, mas são chamadas da mesma forma
-- **Encapsulamento** — a lógica de criação de objetos fica isolada na `ItemFactory`
+- **Encapsulamento** — a lógica de criação de objetos fica isolada na `ItemFactory`, e o acesso ao banco fica isolado no `DatabaseProxy`
 - **Abstração** — `ItemRepositorio` define o contrato via `ABC` e `@abstractmethod`
 
 ---
@@ -69,3 +43,11 @@ A rota e o método `salvar()` **não precisam de nenhuma modificação**.
 - SQLite
 - Flask-Login
 - Werkzeug
+
+---
+
+## 📝 Feedback dos Usuários
+
+Coletamos feedback de colegas e amigos sobre usabilidade, interface, utilidade e bugs encontrados no projeto.
+
+🔗 [Respostas do formulário de feedback](https://docs.google.com/spreadsheets/d/1NtfM8vC6Z_Stbw9a5PQRaNWJumbKhyaPZ6x6B_pSPec/edit?usp=sharing)
